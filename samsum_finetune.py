@@ -36,7 +36,7 @@ def create_bnb_config():
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="fp4",
+        bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16,
     )
 
@@ -99,28 +99,40 @@ def tokenize_batch(batch, tokenizer, max_length):  # Tokenizing a batch
     )
 
 
-def create_prompt_formats(sample, tokenizer):
+def preprocess_function(sample, tokenizer, max_length=1024, padding="max_length", do_truncation=True, text_column='dialogue', summary_column='summary'):
     """
     Format various fields of the sample ('id', 'dialogue', 'summary')
     Then concatenate them using two newline characters 
     :param sample: Sample dictionary
     """
+    # clean data 
+    inputs, targets = [], []
+    for i in range(len(sample[text_column])):
+        if sample[text_column][i] and sample[summary_column][i]:
+            inputs.append(sample[text_column][i])
+            targets.append(sample[summary_column][i])
 
-    INTRO_BLURB = "Below is a short dialogue. Write a summary of the conversation."
-    INSTRUCTION_KEY = "### Dialogue:"
-    RESPONSE_KEY = "### Summary:"
-    
-    blurb = f"{INTRO_BLURB}"
-    instruction = f"{INSTRUCTION_KEY}\n{sample['dialogue']}\n\n{RESPONSE_KEY}"
-    
-    labels = tokenizer(text_target=sample["summary"], max_length=1024, truncation=True)
-    sample["labels"] = labels["input_ids"]
-    
-    parts = [part for part in [blurb, instruction] if part]
-    formatted_prompt = "\n\n".join(parts)
-    sample["text"] = formatted_prompt
+    INTRO_BLURB = "Below is a short dialogue. Write a summary of the conversation.\n\n"
+    INSTRUCTION_KEY = "### Dialogue:\n"
+    RESPONSE_KEY = "\n\n### Summary:"
 
-    return sample
+    # format input to alpaca style
+    inputs = [INTRO_BLURB + INSTRUCTION_KEY + inp for inp in inputs]
+    inputs = [inp + RESPONSE_KEY for inp in inputs]
+    
+    # tokenize to numerical type
+    model_inputs = tokenizer(inputs, max_length=max_length, padding=padding, truncation=do_truncation)
+    labels = tokenizer(text_target=targets, max_length=max_length, padding=padding, truncation=do_truncation)
+    print(len(inputs), len(targets))
+    
+    if padding == "max_length":
+        labels["input_ids"] = [
+            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
+        ]
+
+    model_inputs["labels"] = labels["input_ids"]\
+
+    return model_inputs
 
 
 # SOURCE https://github.com/databrickslabs/dolly/blob/master/training/trainer.py
@@ -132,7 +144,13 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed, dataset:
     # Add prompt to each sample
     print("Preprocessing dataset...")
     # _preprcessing_function = partial(create_prompt_formats, tokenizer=tokenizer)
-    dataset = dataset.map(create_prompt_formats, fn_kwargs={"tokenizer": tokenizer})
+    tokenized_dataset = dataset.map(
+        preprocess_function,
+        fn_kwargs={"tokenizer": tokenizer, "max_length": max_length, "do_truncation": True},
+        batched=True,
+        remove_columns=["id", "dialogue", "summary"]
+    )
+        
     print(type(dataset[0]))
     for i in range(2):
         print(f"--- formatted data {i} ---")
@@ -140,15 +158,16 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed, dataset:
         print("-----------\n\n\n")
         
     # Apply preprocessing to each batch of the dataset & and remove 'instruction', 'context', 'response', 'category' fields
-    _preprocessing_function = partial(tokenize_batch, max_length=max_length, tokenizer=tokenizer)
-    tokenized_dataset = dataset.map(
-        _preprocessing_function,
-        batched=True,
-        remove_columns=["id", "dialogue", "summary"],
-    )
+    # _preprocessing_function = partial(tokenize_batch, max_length=max_length, tokenizer=tokenizer)
+    # tokenized_dataset = dataset.map(
+    #     tokenize_batch,
+    #     fn_kwargs={"max_length": max_length, "tokenizer": tokenizer},
+    #     batched=True,
+    #     remove_columns=["id", "dialogue", "summary"],
+    # )
 
     # Filter out samples that have input_ids exceeding max_length
-    tokenized_dataset = tokenized_dataset.filter(lambda sample: len(sample["input_ids"]) < max_length)
+    # tokenized_dataset = tokenized_dataset.filter(lambda sample: len(sample["input_ids"]) < max_length)
     
     # Shuffle dataset
     tokenized_dataset = tokenized_dataset.shuffle(seed=seed)
@@ -193,25 +212,25 @@ def eval(model, tokenizer, dataset):
         print(f"{data_idx}/{data_cnt}: {result['rougeL']} | Mean rouge-L: {mean_result}")
         
 
-def compute_metrics(eval_preds):
-    metric = evaluate.load("rouge")
-    preds, labels = eval_preds
-    if isinstance(preds, tuple):
-        preds = preds[0]
-    # Replace -100s used for padding as we can't decode them
-    preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
-    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+# def compute_metrics(eval_preds):
+#     metric = evaluate.load("rouge")
+#     preds, labels = eval_preds
+#     if isinstance(preds, tuple):
+#         preds = preds[0]
+#     # Replace -100s used for padding as we can't decode them
+#     preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+#     decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+#     labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+#     decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-    # Some simple post-processing
-    decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+#     # Some simple post-processing
+#     decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
-    result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
-    result = {k: round(v * 100, 4) for k, v in result.items()}
-    prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
-    result["gen_len"] = np.mean(prediction_lens)
-    return result
+#     result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
+#     result = {k: round(v * 100, 4) for k, v in result.items()}
+#     prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
+#     result["gen_len"] = np.mean(prediction_lens)
+#     return result
 
 
 def main():    
@@ -220,23 +239,26 @@ def main():
     MODEL_NAME = model_list[1]
     bnb_config = create_bnb_config()
     model, tokenizer = load_model(MODEL_NAME, bnb_config)
+    max_length = get_max_length(model)
     
     # load dataset
     dataset_list = ("e2e_nlg", "yahma/alpaca-cleaned", "samsum")
     DATASET = dataset_list[2]
-    dataset = load_dataset(DATASET, split="train")
-    print(dataset)
-    for key in dataset[0].keys():
-        print(f"{key}:\n{dataset[1][key]}")
-        print("\n")
-    print(dataset)
-    # preprocess data
-    max_length = get_max_length(model)
-    tokenized_dataset = preprocess_dataset(tokenizer, max_length, 42, dataset)
-    split_dataset = tokenized_dataset.train_test_split(test_size=0.001, shuffle=True)
+    split_dataset = load_dataset(DATASET)
+    
+    # preprocess [train, test, validation] dataset
+    for split_type in split_dataset.keys():
+        print(f"formatting {split_type} dataset...")
+        print(split_dataset[split_type])
+        split_dataset[split_type] = split_dataset[split_type].map(
+            preprocess_function,
+            fn_kwargs={"tokenizer": tokenizer, "max_length": max_length, "do_truncation": True},
+            batched=True,
+            remove_columns=["id", "dialogue", "summary"]
+        )
     print(split_dataset)
-
-
+        
+    
     
     output_dir = f"results/{MODEL_NAME}/final_checkpoint"
     # Apply preprocessing to the model to prepare it by
@@ -269,13 +291,13 @@ def main():
         train_dataset=split_dataset["train"],
         eval_dataset=split_dataset["test"],
         args=TrainingArguments(
-            per_device_train_batch_size=1,
-            per_device_eval_batch_size=1,
+            per_device_train_batch_size=8,
+            per_device_eval_batch_size=8,
             # auto_find_batch_size=True,
             gradient_accumulation_steps=1,
             warmup_steps=2,
-            # num_train_epochs=1,
-            max_steps=10,
+            num_train_epochs=1,
+            # max_steps=10,
             learning_rate=2e-5,
             fp16=True,
             logging_steps=50,
