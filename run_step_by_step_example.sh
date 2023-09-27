@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+export CUDA_VISIBLE_DEVICE="0,1,2,3"
+export CUDA_LAUNCH_BLOCKING=1 
+
 WORKER_NUM=$1
 
 PROCESS_NUM=`expr $WORKER_NUM + 1`

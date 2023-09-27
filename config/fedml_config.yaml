@@ -8,21 +8,21 @@ data_args:
   data_cache_dir: /app/.huggingface_cache/dataset/
   partition_method: "hetero"
   partition_alpha: 0.5
-  dataset_streaming: True
+  dataset_streaming: False
   
 
 model_args:
-  model: "gpt2"
+  model: "microsoft/phi-1_5"
   model_cache_dir: /app/.huggingface_cache/model/
 
 train_args:
   federated_optimizer: "split_nn"
   client_id_list: "[]"
-  client_num_in_total: 2
-  client_num_per_round: 2
+  client_num_in_total: 1
+  client_num_per_round: 1
   comm_round: 1
   epochs: 5
-  batch_size: 256
+  batch_size: 1
   client_optimizer: sgd
   learning_rate: 0.03
   weight_decay: 0.001
@@ -37,7 +37,7 @@ validation_args:
   frequency_of_the_test: 1
 
 device_args:
-  worker_num: 3
+  worker_num: 2
   using_gpu: true
   gpu_mapping_file: config/gpu_mapping.yaml
   gpu_mapping_key: mapping_default
