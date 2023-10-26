@@ -1,8 +1,9 @@
 from datasets import Dataset
 from fedml.arguments import Arguments
 from itertools import chain
-from transformers.testing_utils import CaptureLogger
 import transformers
+from transformers import default_data_collator
+from transformers.testing_utils import CaptureLogger
 from torch.utils.data import DataLoader
 
 def group_texts(examples, block_size):
@@ -23,16 +24,8 @@ def group_texts(examples, block_size):
 
 
 def tokenize_function(examples, text_column_name, tokenizer):
-    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
-    with CaptureLogger(tok_logger) as cl:
-        output = tokenizer(examples[text_column_name])
-    # clm input could be much much longer than block_size
-    if "Token indices sequence length is longer than the" in cl.out:
-        tok_logger.warning(
-            "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
-            " before being passed to the model."
-        )
-    return output
+    return tokenizer(examples[text_column_name])
+
 
 
 
@@ -53,13 +46,13 @@ def transform_data_to_fedml_format(args: Arguments, train_dataset: Dataset, test
 
     if args.rank == 0:
         # server data
-        train_data_global = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
-        test_data_global = DataLoader(test_dataset, shuffle=True, batch_size=args.batch_size)
+        train_data_global = DataLoader(train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.batch_size)
+        test_data_global = DataLoader(test_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.batch_size)
     else:
         # client data
         train_data_local_num_dict[args.rank - 1] = train_dataset.num_rows
-        train_data_local_dict[args.rank - 1] = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
-        test_data_local_dict[args.rank - 1] = DataLoader(test_dataset, shuffle=True, batch_size=args.batch_size)
+        train_data_local_dict[args.rank - 1] = DataLoader(train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.batch_size)
+        test_data_local_dict[args.rank - 1] = DataLoader(test_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.batch_size)
         
     return (
         train_data_num,

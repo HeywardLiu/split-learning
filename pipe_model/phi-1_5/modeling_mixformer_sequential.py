@@ -752,14 +752,14 @@ class MixFormerSequentialForCausalLM(MixFormerSequentialPreTrainedModel):
         labels: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
-        if attention_mask is not None and self.training:
-            print("`attention_mask` is not supported during training. Using it might lead to unexpected results.")
+        # if attention_mask is not None and self.training:
+        #     print("`attention_mask` is not supported during training. Using it might lead to unexpected results.")
 
         if past_key_values is None and attention_mask is None:
             lm_logits = self.layers(input_ids)
         else:
             hidden_layer = self.layers[0](input_ids)
-            for module in self.layers[1:-1]:
+            for module in self.layers[1:-1]:    
                 hidden_layer = module(hidden_layer, past_key_values=past_key_values, attention_mask=attention_mask)
             lm_logits = self.layers[-1](hidden_layer)
 

@@ -1,7 +1,7 @@
 import fedml
 from fedml import FedMLRunner
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, default_data_collator
 from datasets import load_dataset
 from data_utils import transform_data_to_fedml_format, group_texts, tokenize_function
 from peft import LoraConfig, get_peft_model
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         torch_dtype="auto",
         trust_remote_code=True,
     )
-    lora_modules=["Wqkv"]
+    lora_modules=["Wqkv"] 
     lora_config = LoraConfig(
         r=16,  # dimension of the updated matrices
         lora_alpha=64,  # parameter for scaling
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     tokenized_datasets = raw_datasets.map(
                         __tokenize_function,
                         batched=True,
-                        # remove_columns=column_names,
+                        remove_columns=column_names,
                         # load_from_cache_file=not data_args.overwrite_cache,
                         # desc="Running tokenizer on dataset",
                     )

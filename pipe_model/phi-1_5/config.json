@@ -1,0 +1,26 @@
+{
+    "_name_or_path": "microsoft/phi-1_5",
+    "activation_function": "gelu_new",
+    "architectures": [
+      "MixFormerSequentialForCausalLM"
+    ],
+    "auto_map": {
+      "AutoConfig": "microsoft/phi-1_5--configuration_mixformer_sequential.MixFormerSequentialConfig",
+      "AutoModelForCausalLM": "microsoft/phi-1_5--modeling_mixformer_sequential.MixFormerSequentialForCausalLM"
+    },
+    "embd_pdrop": 0.0,
+    "initializer_range": 0.02,
+    "layer_norm_epsilon": 1e-05,
+    "model_type": "mixformer-sequential",
+    "n_embd": 2048,
+    "n_head": 32,
+    "n_inner": null,
+    "n_layer": 24,
+    "n_positions": 2048,
+    "resid_pdrop": 0.0,
+    "rotary_dim": 32,
+    "tie_word_embeddings": false,
+    "torch_dtype": "float16",
+    "transformers_version": "4.33.3",
+    "vocab_size": 51200
+}
